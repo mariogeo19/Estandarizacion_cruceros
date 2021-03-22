@@ -1,7 +1,7 @@
 library(tidyverse)
 library(lubridate)
 library(sf)
-setwd("D:/2020/JCFINP2009/oceanografia/2020-09")
+setwd("D:/2020/JCFINP2003/oceanografia/4-METEOROLOGIA-20-03/2020")
 
 #Definir el nombre del crucero
 cruise <- "JCFINP2009"
@@ -29,17 +29,21 @@ meteorologica <- purrr::map(.x = archivos_log2, .f = readcsv) %>%
   map2(.y = nombres_arc, ~mutate(.x, archive = .y)) %>% 
   reduce(rbind)
 #Descartar los datos sin posicion geografica
+# Extraer las coordenadas mayores a -9959.997
 meteorologica2 <- meteorologica %>% dplyr::filter(Latitude >0) %>% dplyr::filter(Longitude < 0) 
 #Extraer la fecha
 meteorologica_date <- ymd_hms(meteorologica2$date.time.timezone, tz = "America/Denver")
+
 #Convertir a numerico y extraer las coordenadas y convertirlas a decimal
 meteorologica3 <- meteorologica2 %>% 
   dplyr::select(Barometric.Pressure:archive) %>% 
   mutate_if(is.character,as.numeric) %>% 
   dplyr::mutate(lat_gra = as.numeric(substr(Latitude, 1,2)), lat_min = as.numeric(substr(Latitude, 3,10)), 
-                lon_gra = abs(as.numeric(substr(Longitude, 1,4))), lon_min = as.numeric(substr(Longitude, 5,10))) %>% 
+                lon_gra = case_when(Longitude <= -10000 ~ abs(as.numeric(substr(Longitude, 1,4))),
+                                    Longitude > -10000 ~ abs(as.numeric(substr(Longitude, 1,3)))), 
+                lon_min = case_when(Longitude <= -10000 ~ as.numeric(substr(Longitude, 5,10)),
+                                    Longitude > -10000 ~ as.numeric(substr(Longitude, 4,10)))) %>% 
   dplyr::mutate(lat = lat_gra+(lat_min/60), lon =(lon_gra+(lon_min/60))*-1) %>% cbind(meteorologica_date)
-
 
 #Convertir a espacial
 meteorologicasf <- meteorologica3 %>% st_as_sf(coords=c("lon","lat"), crs=4326)
@@ -48,17 +52,17 @@ time_zonesOcean <- st_read("D:/2021/capas_generales/time_zones.gpkg",layer = "ne
   st_crop(meteorologicasf) %>% select(tz_name1st)
 #Intersectar para obtener las zonas horarias
 origin_year <- "2020-01-01 00:00:00"
-Los_Angeles <- "America/Los_Angeles"
-New_York <- "America/New_York"
-Denver <- "America/Denver";
-Chicago <- "America/Chicago";
+Los_Angeles <- "America/Los_Angeles"; tz_Los_Angeles <- "PDT"
+New_York <- "America/New_York"; tz_New_York = "EDT"
+Denver <- "America/Denver"; tz_Denver <- "MST"
+Chicago <- "America/Chicago"; tz_Chicago <- "CDT"
 
 #Obtener las fechas de acuerdo a las zonas horarias
 meteorologicasf_tm <- meteorologicasf %>% st_intersection(time_zonesOcean) %>% 
-  dplyr::mutate(local_date = case_when(tz_name1st == Denver ~ lubridate::with_tz(meteorologica_date, tz = Denver),
-                                       tz_name1st == Chicago ~ lubridate::with_tz(paste(meteorologica_date, tz_name1st), tz = Chicago),
-                                       tz_name1st == Los_Angeles ~ lubridate::with_tz(paste(meteorologica_date, tz_name1st), tz = Los_Angeles),
-                                       tz_name1st == New_York ~ lubridate::with_tz(paste(meteorologica_date, tz_name1st), tz = New_York)),
+  dplyr::mutate(local_date = case_when(tz_name1st == Denver ~ lubridate::with_tz(ymd_hms(meteorologica_date, tz = Denver), tz =  Denver),
+                                       tz_name1st == Chicago ~ lubridate::with_tz(ymd_hms(meteorologica_date, tz = Denver), tz = Chicago),
+                                       tz_name1st == Los_Angeles ~ lubridate::with_tz(ymd_hms(meteorologica_date, tz = Denver), tz = Los_Angeles),
+                                       tz_name1st == New_York ~ lubridate::with_tz(ymd_hms(meteorologica_date, tz = Denver), tz = New_York)),
                 cruise = cruise) %>% 
   dplyr::mutate(date = format(local_date, "%Y-%m-%d"), time = format(local_date, "%H:%M:%S")) %>% 
   dplyr::select( cruise, archive, date, time, Barometric.Pressure:Cks, PH:Wind.Speed.T, -c(lat_gra:tz_name1st, local_date)) %>% 
