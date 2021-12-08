@@ -6,6 +6,10 @@ library(tidyverse)
 ctd_txt_data <- list.files(path = "oceanografia/JCFINP2110_ CTD FINAL/", pattern = ".TXT", full.names = TRUE, recursive = TRUE)
 read_ctd <- function(x){read.table(x, skip = 34)}
 
+extract_asterisk <- function(x){
+    stringr::str_replace(x, '\\*', '') %>% 
+    as.numeric()}
+
 read_archivo_station <- function(y){a = readLines(file(y)); as.numeric(a <- substr(a[3],15,20))}
 read_archivo_cruise <- function(y){a = readLines(file(y)); substr(a[6], 15,24)}
 read_archivo_year <- function(y){a = readLines(file(y)); as.numeric(substr(a[27], 22,25))}
@@ -46,6 +50,15 @@ data_ctd <- data_ctd %>%
   dplyr::rename(Oxygen = Optical_ppm, Oxigen_percent = Optical, ECO = `ECO-SCATT`, `ECO-Chla` = Chla) %>% 
   dplyr::select(Cruise:Second, Latitude:SigmaT, Oxygen:`ECO-Chla`, pH:Transmissometer) %>% 
   dplyr::filter(Latitude >0)
+
+datos_sin_asteriscos <- data_ctd %>% 
+  dplyr::select(9:ncol(data_ctd)) %>% 
+  purrr::map_dfr(.f = extract_asterisk)
+
+datos_fecha <- data_ctd %>% 
+  dplyr::select(1:8)
+
+data_ctd <- bind_cols(datos_fecha, datos_sin_asteriscos)
 cruise <- data_ctd$Cruise[1]
 write.csv(data_ctd, paste0("oceanografia/",cruise,"_CTD_completo.csv"), row.names = FALSE)
 plot(data_ctd$Longitude, data_ctd$Latitude)
